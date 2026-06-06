@@ -170,23 +170,30 @@ def _get_order(order_id: int, session: Session) -> Order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
 
-<<<<<<< HEAD
+def _get_order(order_id: int, session: Session) -> Order:
+    order = session.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+def _get_funded_order(order_id: int, session: Session) -> Order:
+    order = _get_order(order_id, session)
+    if order.app_id is None:
+        raise HTTPException(status_code=400, detail="Order has no escrow yet — fund it first")
+    return order
+
 @router.post("/{order_id}/confirm-delivery")
 def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
-    # Step 1 — find the order
     order = session.exec(select(Order).where(Order.id == order_id)).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Step 2 — validate state, can only confirm a funded order
-    # (for hackathon we also allow pending, so you can demo without Algorand)
     if order.status not in [OrderStatus.PENDING, OrderStatus.FUNDED]:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot confirm delivery for order with status: {order.status}"
         )
 
-    # Step 3 — restore stock
     stock = session.exec(
         select(Stock).where(Stock.product_id == order.product_id)
     ).first()
@@ -194,10 +201,9 @@ def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
     if not stock:
         raise HTTPException(status_code=404, detail="Stock not found for this product")
 
-    stock.quantity += order.quantity  # ← this is the loop close
+    stock.quantity += order.quantity
     session.add(stock)
 
-    # Step 4 — update order status
     order.status = OrderStatus.DELIVERED
     session.add(order)
 
@@ -210,11 +216,3 @@ def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
         "order": order,
         "updated_stock": stock.model_dump()
     }
-=======
-
-def _get_funded_order(order_id: int, session: Session) -> Order:
-    order = _get_order(order_id, session)
-    if order.app_id is None:
-        raise HTTPException(status_code=400, detail="Order has no escrow yet — fund it first")
-    return order
->>>>>>> d375d56c84bf09ab43d0582f598046df398988f4
