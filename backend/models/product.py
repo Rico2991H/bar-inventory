@@ -37,5 +37,6 @@ class Order(SQLModel, table=True):
     total_price:      float
     status:           OrderStatus   = Field(default=OrderStatus.PENDING)
     order_hash:       Optional[str] = None  # hash of order JSON — stored on Algorand later
-    escrow_address:   Optional[str] = None  # Algorand contract address — filled after deployment
-    txn_id:           Optional[str] = None  # Algorand transaction ID — filled after funding
+    escrow_address:   Optional[str] = None  # Algorand escrow app address — filled after deployment
+    app_id:           Optional[int] = None  # Algorand escrow app id — needed to call the contract
+    txn_id:           Optional[str] = None  # Algorand funding transaction id — filled after funding
