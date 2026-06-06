@@ -24,6 +24,7 @@ from algokit_utils import (
     PaymentParams,
     SigningAccount,
 )
+from algosdk.atomic_transaction_composer import TransactionWithSigner
 
 from backend.blockchain.escrow_client import (
     CreateArgs,
@@ -97,7 +98,7 @@ def create_and_fund_escrow(seller_address: str, amount_microalgos: int) -> dict:
     buyer = get_buyer()
     factory = _factory()
 
-    client, create_result = factory.send.create(
+    client, create_result = factory.send.create.create(
         CreateArgs(seller=seller_address, amount=amount_microalgos),
     )
 
@@ -110,15 +111,17 @@ def create_and_fund_escrow(seller_address: str, amount_microalgos: int) -> dict:
         )
     )
 
-    # Group an exact-amount payment with the fund() call.
-    fund_result = client.send.fund(
-        FundArgs(
-            payment=PaymentParams(
-                sender=buyer.address,
-                receiver=client.app_address,
-                amount=AlgoAmount(micro_algo=amount_microalgos),
-            )
+    # Group an exact-amount payment with the fund() call. The transaction arg
+    # must be a built transaction with a signer, not raw params.
+    pay_txn = algorand.create_transaction.payment(
+        PaymentParams(
+            sender=buyer.address,
+            receiver=client.app_address,
+            amount=AlgoAmount(micro_algo=amount_microalgos),
         )
+    )
+    fund_result = client.send.fund(
+        FundArgs(payment=TransactionWithSigner(pay_txn, buyer.signer))
     )
 
     return {
