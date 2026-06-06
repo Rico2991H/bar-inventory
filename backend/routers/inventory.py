@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from backend.db.database import get_session
 from backend.models.product import Product, Supplier, Stock
+from backend.engine.rules import run_rule_engine
+from backend.engine.reorder import check_reorder_needed
 
 # APIRouter is like a mini FastAPI app — we group related endpoints together
 # prefix means all routes here start with /inventory
@@ -66,3 +68,13 @@ def sell_product(product_id: int, quantity: int, session: Session = Depends(get_
     session.commit()
     session.refresh(stock)
     return stock
+
+@router.get("/orders/preview")
+def preview_orders(session: Session = Depends(get_session)):
+    # Runs the full rule engine and returns order drafts
+    # Nothing is committed yet — this is just a preview
+    return run_rule_engine(session)
+
+@router.get("/reorder-check")
+def reorder_check(session: Session = Depends(get_session)):
+    return check_reorder_needed(session)

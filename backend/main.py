@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from backend.db.database import create_db
 from backend.routers.inventory import router as inventory_router  # ← added
-from backend.routers.orders import router as orders_router        # ← escrow orders
+from backend.routers.orders import router as orders_router        # rule-engine + escrow
 from backend.routers.blockchain import router as blockchain_router  # ← chain diagnostics
 
 app = FastAPI(

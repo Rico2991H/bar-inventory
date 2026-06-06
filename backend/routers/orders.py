@@ -1,83 +1,126 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+import hashlib
+import json
 
 from backend.db.database import get_session
-from backend.models.product import Supplier
-from backend.models.order import Order, OrderCreate
+from backend.models.product import Order, OrderStatus, Supplier
+from backend.engine.rules import run_rule_engine
 from backend.blockchain import service
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 
-@router.post("")
-def create_order(body: OrderCreate, session: Session = Depends(get_session)):
-    """Phase 8 — create an order and back it with a funded on-chain escrow."""
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="amount must be positive")
-    if body.quantity <= 0:
-        raise HTTPException(status_code=400, detail="quantity must be positive")
+def _algo_to_microalgos(total_price: float) -> int:
+    """Order totals are denominated in ALGO; the escrow works in microalgos."""
+    return int(round(total_price * 1_000_000))
 
-    supplier = session.get(Supplier, body.supplier_id)
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    if not supplier.wallet_address:
+
+@router.post("/generate")
+def generate_orders(session: Session = Depends(get_session)):
+    """Phases 1-5 — run the rule engine and persist PENDING order drafts."""
+    # Step 1 — run the rule engine to get order drafts
+    drafts = run_rule_engine(session)
+
+    if not drafts:
+        return {"message": "No reorders needed", "orders": []}
+
+    created_orders = []
+
+    for draft in drafts:
+        # Step 2 — check if a pending order already exists for this product
+        # prevents duplicate orders being created
+        existing = session.exec(
+            select(Order).where(
+                Order.product_id == draft["product_id"],
+                Order.status == OrderStatus.PENDING
+            )
+        ).first()
+
+        if existing:
+            created_orders.append(existing)
+            continue
+
+        # Step 3 — hash the order for tamper-proof binding to Algorand later
+        order_data = {
+            "product_id":  draft["product_id"],
+            "supplier_id": draft["supplier_id"],
+            "quantity":    draft["quantity"],
+            "total_price": draft["total_price"],
+        }
+        order_hash = hashlib.sha256(
+            json.dumps(order_data, sort_keys=True).encode()
+        ).hexdigest()
+
+        # Step 4 — persist the order to the database
+        order = Order(
+            product_id   = draft["product_id"],
+            supplier_id  = draft["supplier_id"],
+            quantity     = draft["quantity"],
+            total_price  = draft["total_price"],
+            order_hash   = order_hash,
+        )
+
+        session.add(order)
+        session.commit()
+        session.refresh(order)
+        created_orders.append(order)
+
+    return {"message": f"{len(created_orders)} order(s) created", "orders": created_orders}
+
+
+@router.post("/{order_id}/fund")
+def fund_order(order_id: int, session: Session = Depends(get_session)):
+    """Phase 8 — deploy + fund an on-chain escrow for a PENDING order."""
+    order = _get_order(order_id, session)
+    if order.status != OrderStatus.PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Order must be PENDING to fund (is {order.status.value})",
+        )
+
+    supplier = session.get(Supplier, order.supplier_id)
+    if not supplier or not supplier.wallet_address:
         raise HTTPException(
             status_code=400, detail="Supplier has no wallet address for payouts"
         )
 
-    try:
-        chain = service.create_and_fund_escrow(supplier.wallet_address, body.amount)
-    except Exception as e:  # surface chain/connectivity errors clearly
-        raise HTTPException(status_code=502, detail=f"Escrow creation failed: {e}")
+    amount = _algo_to_microalgos(order.total_price)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Order total must be positive")
 
-    order = Order(
-        product_id=body.product_id,
-        supplier_id=body.supplier_id,
-        quantity=body.quantity,
-        amount=body.amount,
-        status="funded",
-        app_id=chain["app_id"],
-        app_address=chain["app_address"],
-        create_tx=chain["create_tx"],
-        fund_tx=chain["fund_tx"],
-    )
+    try:
+        chain = service.create_and_fund_escrow(supplier.wallet_address, amount)
+    except Exception as e:  # surface chain/connectivity errors clearly
+        raise HTTPException(status_code=502, detail=f"Escrow funding failed: {e}")
+
+    order.status = OrderStatus.FUNDED
+    order.escrow_address = chain["app_address"]
+    order.app_id = chain["app_id"]
+    order.txn_id = chain["fund_tx"]
     session.add(order)
     session.commit()
     session.refresh(order)
     return order
 
 
-@router.get("")
-def list_orders(session: Session = Depends(get_session)):
-    return session.exec(select(Order)).all()
-
-
-@router.get("/{order_id}")
-def get_order(order_id: int, session: Session = Depends(get_session)):
-    order = session.get(Order, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return order
-
-
 @router.post("/{order_id}/confirm-delivery")
 def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
     """Phase 9 — confirm the goods were delivered for this order."""
-    order = _get_order_with_escrow(order_id, session)
-    if order.status == "released":
+    order = _get_funded_order(order_id, session)
+    if order.status == OrderStatus.RELEASED:
         raise HTTPException(status_code=400, detail="Order already released")
-    if order.status == "delivered":
+    if order.status == OrderStatus.DELIVERED:
         raise HTTPException(status_code=400, detail="Delivery already confirmed")
-    if order.status != "funded":
+    if order.status != OrderStatus.FUNDED:
         raise HTTPException(status_code=400, detail="Order is not funded")
 
     try:
-        result = service.confirm_delivery(order.app_id)
+        service.confirm_delivery(order.app_id)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Confirm delivery failed: {e}")
 
-    order.status = "delivered"
-    order.delivery_tx = result["tx"]
+    order.status = OrderStatus.DELIVERED
     session.add(order)
     session.commit()
     session.refresh(order)
@@ -87,31 +130,45 @@ def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
 @router.post("/{order_id}/release")
 def release(order_id: int, session: Session = Depends(get_session)):
     """Phase 10 — release the escrowed funds to the supplier."""
-    order = _get_order_with_escrow(order_id, session)
-    if order.status == "released":
+    order = _get_funded_order(order_id, session)
+    if order.status == OrderStatus.RELEASED:
         raise HTTPException(status_code=400, detail="Order already released")
-    if order.status != "delivered":
+    if order.status != OrderStatus.DELIVERED:
         raise HTTPException(
             status_code=400, detail="Delivery must be confirmed before release"
         )
 
     try:
-        result = service.release(order.app_id)
+        service.release(order.app_id)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Release failed: {e}")
 
-    order.status = "released"
-    order.release_tx = result["tx"]
+    order.status = OrderStatus.RELEASED
     session.add(order)
     session.commit()
     session.refresh(order)
     return order
 
 
-def _get_order_with_escrow(order_id: int, session: Session) -> Order:
+@router.get("/")
+def get_orders(session: Session = Depends(get_session)):
+    return session.exec(select(Order)).all()
+
+
+@router.get("/{order_id}")
+def get_order(order_id: int, session: Session = Depends(get_session)):
+    return _get_order(order_id, session)
+
+
+def _get_order(order_id: int, session: Session) -> Order:
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+def _get_funded_order(order_id: int, session: Session) -> Order:
+    order = _get_order(order_id, session)
     if order.app_id is None:
-        raise HTTPException(status_code=400, detail="Order has no escrow app")
+        raise HTTPException(status_code=400, detail="Order has no escrow yet — fund it first")
     return order
