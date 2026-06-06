@@ -81,7 +81,8 @@ def sell_product(product_id: int, quantity: int, session: Session = Depends(get_
         existing = session.exec(
             select(Order).where(
                 Order.product_id == draft["product_id"],
-                Order.status == OrderStatus.PENDING
+                Order.status != OrderStatus.RELEASED,
+                Order.status != OrderStatus.CANCELLED
             )
         ).first()
 
@@ -114,7 +115,7 @@ def sell_product(product_id: int, quantity: int, session: Session = Depends(get_
 
     # Step 4 — return stock update + any auto-generated orders
     return {
-        "stock": stock.model_dump,
+        "stock": stock.model_dump(),
         "auto_orders": auto_orders
     }
 

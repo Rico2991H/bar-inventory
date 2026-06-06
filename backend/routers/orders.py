@@ -3,6 +3,7 @@ from sqlmodel import Session, select
 from backend.db.database import get_session
 from backend.models.product import Order, OrderStatus
 from backend.engine.rules import run_rule_engine
+from backend.models.product import Order, OrderStatus, Stock
 import hashlib
 import json
 
@@ -72,3 +73,43 @@ def get_order(order_id: int, session: Session = Depends(get_session)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
+
+@router.post("/{order_id}/confirm-delivery")
+def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
+    # Step 1 — find the order
+    order = session.exec(select(Order).where(Order.id == order_id)).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Step 2 — validate state, can only confirm a funded order
+    # (for hackathon we also allow pending, so you can demo without Algorand)
+    if order.status not in [OrderStatus.PENDING, OrderStatus.FUNDED]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot confirm delivery for order with status: {order.status}"
+        )
+
+    # Step 3 — restore stock
+    stock = session.exec(
+        select(Stock).where(Stock.product_id == order.product_id)
+    ).first()
+
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found for this product")
+
+    stock.quantity += order.quantity  # ← this is the loop close
+    session.add(stock)
+
+    # Step 4 — update order status
+    order.status = OrderStatus.DELIVERED
+    session.add(order)
+
+    session.commit()
+    session.refresh(order)
+    session.refresh(stock)
+
+    return {
+        "message": "Delivery confirmed, stock restored",
+        "order": order,
+        "updated_stock": stock.model_dump()
+    }
