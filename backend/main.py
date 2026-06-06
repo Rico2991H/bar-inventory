@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from backend.db.database import create_db
 from backend.routers.inventory import router as inventory_router  # ← added
+from backend.routers.orders import router as orders_router
 
 app = FastAPI(
     title="Bar Inventory API",
@@ -17,3 +18,4 @@ def health():
     return {"status": "ok"}
 
 app.include_router(inventory_router)  # ← added
+app.include_router(orders_router)
