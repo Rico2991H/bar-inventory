@@ -1,0 +1,275 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 1
+    bytecblock "funded" "buyer" "amount" "released" "seller" "delivered"
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // smart_contracts/escrow/contract.py:27-28
+    // # Global state — initialised to safe defaults; create() sets the real values.
+    // self.buyer = Account()
+    bytec_1 // "buyer"
+    global ZeroAddress
+    app_global_put
+    // smart_contracts/escrow/contract.py:29
+    // self.seller = Account()
+    bytec 4 // "seller"
+    global ZeroAddress
+    app_global_put
+    // smart_contracts/escrow/contract.py:30
+    // self.amount = UInt64(0)
+    bytec_2 // "amount"
+    intc_0 // 0
+    app_global_put
+    // smart_contracts/escrow/contract.py:31
+    // self.funded = False
+    bytec_0 // "funded"
+    intc_0 // 0
+    app_global_put
+    // smart_contracts/escrow/contract.py:32
+    // self.delivered = False
+    bytec 5 // "delivered"
+    intc_0 // 0
+    app_global_put
+    // smart_contracts/escrow/contract.py:33
+    // self.released = False
+    bytec_3 // "released"
+    intc_0 // 0
+    app_global_put
+
+main_after_if_else@2:
+    // smart_contracts/escrow/contract.py:13
+    // class Escrow(ARC4Contract):
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    bz main_create_NoOp@9
+    pushbytess 0x51531b75 0xff4966a6 0x076bbd4d // method "fund(pay)void", method "confirm_delivery()void", method "release()void"
+    txna ApplicationArgs 0
+    match fund confirm_delivery release
+    err
+
+main_create_NoOp@9:
+    // smart_contracts/escrow/contract.py:13
+    // class Escrow(ARC4Contract):
+    pushbytes 0xc0b64352 // method "create(address,uint64)void"
+    txna ApplicationArgs 0
+    match create
+    err
+
+
+// smart_contracts.escrow.contract.Escrow.create[routing]() -> void:
+create:
+    // smart_contracts/escrow/contract.py:35
+    // @abimethod(create="require")
+    txna ApplicationArgs 1
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    pushint 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    // smart_contracts/escrow/contract.py:38
+    // assert amount > 0, "amount must be positive"
+    dup
+    assert // amount must be positive
+    // smart_contracts/escrow/contract.py:39
+    // self.buyer = Txn.sender
+    bytec_1 // "buyer"
+    txn Sender
+    app_global_put
+    // smart_contracts/escrow/contract.py:40
+    // self.seller = seller
+    bytec 4 // "seller"
+    uncover 2
+    app_global_put
+    // smart_contracts/escrow/contract.py:41
+    // self.amount = amount
+    bytec_2 // "amount"
+    swap
+    app_global_put
+    // smart_contracts/escrow/contract.py:35
+    // @abimethod(create="require")
+    intc_1 // 1
+    return
+
+
+// smart_contracts.escrow.contract.Escrow.fund[routing]() -> void:
+fund:
+    // smart_contracts/escrow/contract.py:43
+    // @abimethod
+    txn GroupIndex
+    intc_1 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_1 // pay
+    ==
+    assert // transaction type is pay
+    // smart_contracts/escrow/contract.py:49
+    // assert not self.funded, "already funded"
+    intc_0 // 0
+    bytec_0 // "funded"
+    app_global_get_ex
+    assert // check self.funded exists
+    !
+    assert // already funded
+    // smart_contracts/escrow/contract.py:50
+    // assert payment.sender == self.buyer, "only the buyer may fund"
+    dup
+    gtxns Sender
+    intc_0 // 0
+    bytec_1 // "buyer"
+    app_global_get_ex
+    assert // check self.buyer exists
+    ==
+    assert // only the buyer may fund
+    // smart_contracts/escrow/contract.py:52
+    // payment.receiver == Global.current_application_address
+    dup
+    gtxns Receiver
+    global CurrentApplicationAddress
+    ==
+    // smart_contracts/escrow/contract.py:51-53
+    // assert (
+    //     payment.receiver == Global.current_application_address
+    // ), "payment must go to the escrow"
+    assert // payment must go to the escrow
+    // smart_contracts/escrow/contract.py:54
+    // assert payment.amount == self.amount, "payment must equal the order amount"
+    gtxns Amount
+    intc_0 // 0
+    bytec_2 // "amount"
+    app_global_get_ex
+    assert // check self.amount exists
+    ==
+    assert // payment must equal the order amount
+    // smart_contracts/escrow/contract.py:55
+    // self.funded = True
+    bytec_0 // "funded"
+    intc_1 // 1
+    app_global_put
+    // smart_contracts/escrow/contract.py:43
+    // @abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.escrow.contract.Escrow.confirm_delivery[routing]() -> void:
+confirm_delivery:
+    // smart_contracts/escrow/contract.py:60
+    // assert Txn.sender == self.buyer, "only the buyer may confirm delivery"
+    txn Sender
+    intc_0 // 0
+    bytec_1 // "buyer"
+    app_global_get_ex
+    assert // check self.buyer exists
+    ==
+    assert // only the buyer may confirm delivery
+    // smart_contracts/escrow/contract.py:61
+    // assert self.funded, "escrow is not funded"
+    intc_0 // 0
+    bytec_0 // "funded"
+    app_global_get_ex
+    assert // check self.funded exists
+    assert // escrow is not funded
+    // smart_contracts/escrow/contract.py:62
+    // assert not self.released, "already released"
+    intc_0 // 0
+    bytec_3 // "released"
+    app_global_get_ex
+    assert // check self.released exists
+    !
+    assert // already released
+    // smart_contracts/escrow/contract.py:63
+    // self.delivered = True
+    bytec 5 // "delivered"
+    intc_1 // 1
+    app_global_put
+    // smart_contracts/escrow/contract.py:57
+    // @abimethod
+    intc_1 // 1
+    return
+
+
+// smart_contracts.escrow.contract.Escrow.release[routing]() -> void:
+release:
+    // smart_contracts/escrow/contract.py:68
+    // assert self.funded, "escrow is not funded"
+    intc_0 // 0
+    bytec_0 // "funded"
+    app_global_get_ex
+    assert // check self.funded exists
+    assert // escrow is not funded
+    // smart_contracts/escrow/contract.py:69
+    // assert self.delivered, "delivery not confirmed"
+    intc_0 // 0
+    bytec 5 // "delivered"
+    app_global_get_ex
+    assert // check self.delivered exists
+    assert // delivery not confirmed
+    // smart_contracts/escrow/contract.py:70
+    // assert not self.released, "already released"
+    intc_0 // 0
+    bytec_3 // "released"
+    app_global_get_ex
+    assert // check self.released exists
+    !
+    assert // already released
+    // smart_contracts/escrow/contract.py:71-76
+    // # fee=0 -> fee is covered by the outer transaction (fee pooling).
+    // itxn.Payment(
+    //     receiver=self.seller,
+    //     amount=self.amount,
+    //     fee=0,
+    // ).submit()
+    itxn_begin
+    // smart_contracts/escrow/contract.py:73
+    // receiver=self.seller,
+    intc_0 // 0
+    bytec 4 // "seller"
+    app_global_get_ex
+    assert // check self.seller exists
+    // smart_contracts/escrow/contract.py:74
+    // amount=self.amount,
+    intc_0 // 0
+    bytec_2 // "amount"
+    app_global_get_ex
+    assert // check self.amount exists
+    itxn_field Amount
+    itxn_field Receiver
+    // smart_contracts/escrow/contract.py:71-72
+    // # fee=0 -> fee is covered by the outer transaction (fee pooling).
+    // itxn.Payment(
+    intc_1 // pay
+    itxn_field TypeEnum
+    // smart_contracts/escrow/contract.py:75
+    // fee=0,
+    intc_0 // 0
+    itxn_field Fee
+    // smart_contracts/escrow/contract.py:71-76
+    // # fee=0 -> fee is covered by the outer transaction (fee pooling).
+    // itxn.Payment(
+    //     receiver=self.seller,
+    //     amount=self.amount,
+    //     fee=0,
+    // ).submit()
+    itxn_submit
+    // smart_contracts/escrow/contract.py:77
+    // self.released = True
+    bytec_3 // "released"
+    intc_1 // 1
+    app_global_put
+    // smart_contracts/escrow/contract.py:65
+    // @abimethod
+    intc_1 // 1
+    return
