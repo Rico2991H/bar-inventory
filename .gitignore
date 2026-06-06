@@ -168,3 +168,6 @@ cython_debug/
 # NPM
 node_modules
 
+
+# Local SQLite dev database (regenerated on startup)
+inventory.db

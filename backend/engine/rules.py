@@ -51,8 +51,6 @@ def run_rule_engine(session: Session) -> list[dict]:
             select(Supplier).where(Supplier.id == product.preferred_supplier_id)
         ).first()
 
-        print(f"DEBUG product: {product}")
-        print(f"DEBUG supplier: {supplier}")
         if not supplier:
             # No supplier configured — skip this item
             continue
