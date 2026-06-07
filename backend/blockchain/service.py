@@ -20,6 +20,7 @@ from functools import lru_cache
 from algokit_utils import (
     AlgoAmount,
     AlgorandClient,
+    CommonAppCallCreateParams,
     CommonAppCallParams,
     PaymentParams,
     SigningAccount,
@@ -86,20 +87,25 @@ def _client(app_id: int) -> EscrowClient:
     )
 
 
-def create_and_fund_escrow(seller_address: str, amount_microalgos: int) -> dict:
+def create_and_fund_escrow(seller_address: str, amount_microalgos: int, order_hash: str) -> dict:
     """Phase 8 — deploy a fresh escrow for an order and fund it.
 
     Steps:
-      1. create(seller, amount)         -> new app instance
+      1. create(seller, amount)         -> new app instance (note = order_hash bytes)
       2. top up the app's min balance   -> so it can hold funds + pay out
       3. fund(payment)                  -> buyer pays exactly `amount` into escrow
+
+    The order_hash is embedded as the transaction note on the create call, anchoring
+    this specific order to its escrow on-chain without changing the contract ABI.
     """
     algorand = get_algorand()
     buyer = get_buyer()
     factory = _factory()
 
+    note = bytes.fromhex(order_hash) if order_hash else None
     client, create_result = factory.send.create.create(
         CreateArgs(seller=seller_address, amount=amount_microalgos),
+        params=CommonAppCallCreateParams(note=note),
     )
 
     # Cover the app account's minimum balance requirement.

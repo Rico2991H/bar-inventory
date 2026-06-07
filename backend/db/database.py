@@ -1,21 +1,44 @@
 from sqlmodel import SQLModel, create_engine, Session
 
-# This creates a local SQLite file called inventory.db in your project
-# SQLite is a simple file-based database — perfect for a hackathon
-# no server needed, it just works
 DATABASE_URL = "sqlite:///./inventory.db"
 
-# The engine is the connection to the database
-# connect_args is a SQLite-specific setting that prevents threading issues with FastAPI
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
+
+def _add_missing_columns() -> None:
+    """SQLite ALTER TABLE to add any columns that exist in the model but not yet in the DB.
+    Safe to run on every startup — skips columns that already exist."""
+    import sqlite3
+    migrations = {
+        "order": [
+            ("rating",      "INTEGER"),
+            ("rating_note", "TEXT"),
+        ],
+        "simulationclock": [
+            ("sim_start_real", "TEXT"),
+        ],
+    }
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    try:
+        conn = sqlite3.connect(db_path)
+        cur  = conn.cursor()
+        for table, columns in migrations.items():
+            cur.execute(f"PRAGMA table_info([{table}])")
+            existing = {row[1] for row in cur.fetchall()}
+            for col_name, col_type in columns:
+                if col_name not in existing:
+                    cur.execute(f"ALTER TABLE [{table}] ADD COLUMN {col_name} {col_type}")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # DB might not exist yet on first run — create_all handles that
+
+
 def create_db():
-    # This reads all your SQLModel classes and creates the tables if they don't exist yet
-    # You call this once when the app starts
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns()
+
 
 def get_session():
-    # This is a dependency FastAPI will use to give each request its own database session
-    # 'with' ensures the session is always closed after the request, even if it crashes
     with Session(engine) as session:
         yield session
