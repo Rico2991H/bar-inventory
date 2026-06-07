@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from backend.db.database import get_session
 from backend.engine.rules import run_rule_engine
 from backend.engine.auto_buy import try_auto_fund_order
+from backend.blockchain import service
 from backend.models.product import (
     Order, OrderStatus, Product, SaleEvent, SimulationClock, Stock, StockLog,
 )
@@ -70,6 +71,38 @@ def skip_day(session: Session = Depends(get_session)):
     products = session.exec(select(Product)).all()
     stocks   = {s.product_id: s for s in session.exec(select(Stock)).all()}
 
+    # --- Process deliveries that are due (lead time elapsed) ---
+    # Funded escrows whose delivery day has arrived: confirm + release on-chain
+    # (pay the supplier) and restock. Sim stays resilient if the chain call fails.
+    arrivals = []
+    due = session.exec(
+        select(Order).where(
+            Order.status == OrderStatus.FUNDED,
+            Order.deliver_on_day.is_not(None),
+            Order.deliver_on_day <= clock.sim_day,
+        )
+    ).all()
+    for o in due:
+        if o.app_id is not None:
+            try:
+                service.confirm_delivery(o.app_id)
+                service.release(o.app_id)
+            except Exception:
+                pass  # keep simulating even if LocalNet hiccups
+        o.status = OrderStatus.RELEASED
+        session.add(o)
+        stock = stocks.get(o.product_id)
+        if stock:
+            stock.quantity += o.quantity
+            session.add(stock)
+            session.add(StockLog(
+                product_id=o.product_id, change=o.quantity, reason="restock",
+                note=f"Lieferung Order #{o.id} (Sim Tag {clock.sim_day})", logged_at=sim_ts,
+            ))
+        arrivals.append({"order_id": o.id, "product_id": o.product_id, "qty": o.quantity})
+    if due:
+        session.commit()
+
     all_events = session.exec(select(SaleEvent)).all()
     events_by_product: dict[int, list] = {}
     for e in all_events:
@@ -82,9 +115,12 @@ def skip_day(session: Session = Depends(get_session)):
         if not stock or stock.quantity <= 0:
             continue
 
-        vel = _velocity(product.id, events_by_product.get(product.id, []))
-        if vel is None:
-            vel = max(0.1, stock.reorder_qty / 30)
+        # Baseline daily demand so the simulation keeps producing sales even
+        # with little/no history (e.g. right after a reset). Busier products,
+        # whose measured velocity exceeds the baseline, override it.
+        baseline = max(0.5, stock.reorder_qty / 14)
+        vel = _velocity(product.id, events_by_product.get(product.id, [])) or 0
+        vel = max(vel, baseline)
 
         qty = round(vel * random.uniform(0.7, 1.3))
         qty = max(0, min(qty, stock.quantity))
@@ -108,25 +144,29 @@ def skip_day(session: Session = Depends(get_session)):
 
     session.commit()
 
-    # Auto-generate reorders for anything that dropped below threshold
+    # Auto-generate reorders for anything that dropped below threshold.
+    # Skip products that already have an ACTIVE order (pending or in-transit/funded)
+    # so we don't double-order goods that are already on the way.
     orders_triggered = 0
     new_order_ids = []
     for draft in run_rule_engine(session):
-        existing = session.exec(
+        active = session.exec(
             select(Order).where(
                 Order.product_id == draft["product_id"],
-                Order.status     == OrderStatus.PENDING,
+                Order.status.in_([OrderStatus.PENDING, OrderStatus.FUNDED]),
             )
         ).first()
-        if existing:
-            new_order_ids.append(existing.id)
-        else:
-            order = Order(product_id=draft["product_id"], quantity=draft["quantity"])
-            session.add(order)
-            session.commit()
-            session.refresh(order)
-            new_order_ids.append(order.id)
-            orders_triggered += 1
+        if active:
+            # Retry funding if it's still an unfunded draft; leave in-transit ones alone.
+            if active.status == OrderStatus.PENDING:
+                new_order_ids.append(active.id)
+            continue
+        order = Order(product_id=draft["product_id"], quantity=draft["quantity"])
+        session.add(order)
+        session.commit()
+        session.refresh(order)
+        new_order_ids.append(order.id)
+        orders_triggered += 1
 
     # Trigger auto-buy for all pending orders that need reordering
     for oid in new_order_ids:
@@ -137,6 +177,7 @@ def skip_day(session: Session = Depends(get_session)):
         "sim_date":         sim_ts.strftime("%d. %b %Y"),
         "sales":            sales_log,
         "orders_triggered": orders_triggered,
+        "deliveries":       len(arrivals),
     }
 
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -193,7 +193,7 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
     <div className="rounded-lg border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Auto-buy</span>
-        <span className="text-xs text-gray-400">Automatisch nachkaufen wenn Lager unter Meldebestand</span>
+        <span className="text-xs text-gray-400">Auto-reorder when stock drops below the reorder point</span>
       </div>
 
       <div className="divide-y divide-gray-100">
@@ -222,7 +222,7 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
                       ${cfg.enabled ? 'translate-x-4' : 'translate-x-0'}`} />
                   </div>
                   <span className={`text-xs font-medium ${cfg.enabled ? 'text-indigo-700' : 'text-gray-400'}`}>
-                    {cfg.enabled ? 'Aktiv' : 'Aus'}
+                    {cfg.enabled ? 'On' : 'Off'}
                   </span>
                 </label>
 
@@ -233,8 +233,8 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
                     onChange={e => update(cfg.product_id, { mode: e.target.value })}
                     className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   >
-                    <option value="fixed">Fixierter Lieferant</option>
-                    <option value="ai">KI-Agent</option>
+                    <option value="fixed">Fixed supplier</option>
+                    <option value="ai">AI agent</option>
                   </select>
 
                   {/* Supplier selector (fixed mode) */}
@@ -251,18 +251,18 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
                           className={`text-xs border rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400
                             ${showWarn ? 'border-amber-400' : 'border-gray-300'}`}
                         >
-                          <option value="">— Lieferant wählen —</option>
+                          <option value="">— Select supplier —</option>
                           {suppliers.map(s => {
                             const inCatalog = catalog.some(e => e.supplier_id === s.id && e.product_id === cfg.product_id)
                             return (
                               <option key={s.id} value={s.id}>
-                                {s.name}{inCatalog ? '' : ' (kein Angebot)'}
+                                {s.name}{inCatalog ? '' : ' (no offer)'}
                               </option>
                             )
                           })}
                         </select>
                         {showWarn && (
-                          <span title="Dieser Lieferant hat dieses Produkt nicht im Katalog" className="text-amber-500 text-sm cursor-help">⚠</span>
+                          <span title="This supplier does not carry this product in their catalog" className="text-amber-500 text-sm cursor-help">⚠</span>
                         )}
                       </div>
                     )
@@ -279,7 +279,7 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
                           onClick={() => setExpanded(e => ({ ...e, [cfg.product_id]: !isExpanded }))}
                           className="text-xs text-violet-600 hover:underline"
                         >
-                          {isExpanded ? 'verbergen' : 'letzte Entscheidung ▾'}
+                          {isExpanded ? 'hide' : 'last decision ▾'}
                         </button>
                       )}
                     </div>
@@ -290,10 +290,10 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
               {/* AI reasoning expansion */}
               {cfg.mode === 'ai' && isExpanded && aiChoice && (
                 <div className="mt-2 ml-40 bg-violet-50 border border-violet-100 rounded px-3 py-2 text-xs text-violet-800 space-y-0.5">
-                  <div className="font-semibold">Gewählt: {aiChoice.supplier_name}</div>
+                  <div className="font-semibold">Chosen: {aiChoice.supplier_name}</div>
                   <div className="text-violet-600">{aiChoice.reasoning}</div>
                   <div className="text-violet-400">
-                    {aiChoice.at && new Date(aiChoice.at).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' })}
+                    {aiChoice.at && new Date(aiChoice.at).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })}
                   </div>
                 </div>
               )}
@@ -309,7 +309,7 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
         })}
 
         {configs.length === 0 && (
-          <div className="px-4 py-4 text-xs text-gray-400 text-center">Keine Produkte gefunden.</div>
+          <div className="px-4 py-4 text-xs text-gray-400 text-center">No products found.</div>
         )}
       </div>
     </div>
@@ -317,8 +317,8 @@ function AutoBuyPanel({ suppliers, refreshOrders }) {
 }
 
 const REASON_LABEL = {
-  sale:       { label: 'Verkauf',       color: 'text-red-600',   bg: 'bg-red-50',   icon: '▼' },
-  restock:    { label: 'Eingang',       color: 'text-green-600', bg: 'bg-green-50', icon: '▲' },
+  sale:       { label: 'Sale',          color: 'text-red-600',   bg: 'bg-red-50',   icon: '▼' },
+  restock:    { label: 'Restock',       color: 'text-green-600', bg: 'bg-green-50', icon: '▲' },
   simulation: { label: 'Simulation',    color: 'text-indigo-500',bg: 'bg-indigo-50',icon: '⏩' },
 }
 
@@ -330,7 +330,7 @@ function ActivityLog({ refreshKey }) {
   }, [refreshKey])
 
   if (entries.length === 0) return (
-    <div className="text-xs text-gray-400 text-center py-4">Noch keine Bewegungen aufgezeichnet.</div>
+    <div className="text-xs text-gray-400 text-center py-4">No movements recorded yet.</div>
   )
 
   return (
@@ -338,7 +338,7 @@ function ActivityLog({ refreshKey }) {
       {entries.map(e => {
         const r = REASON_LABEL[e.reason] ?? { label: e.reason, color: 'text-gray-600', bg: 'bg-gray-50', icon: '·' }
         const ts = new Date(e.logged_at)
-        const timeStr = ts.toLocaleString('de-AT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        const timeStr = ts.toLocaleString('en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
         return (
           <div key={e.id} className={`flex items-center gap-3 px-3 py-2 ${r.bg}`}>
             <span className={`text-base leading-none ${r.color}`}>{r.icon}</span>
@@ -364,7 +364,6 @@ function ActivityLog({ refreshKey }) {
 function InventoryTab({ onOrdersChanged }) {
   const [stocks, setStocks]       = useState([])
   const [products, setProducts]   = useState({})
-  const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading]     = useState(true)
   const [selling, setSelling]     = useState({})
   const [alert, setAlert]         = useState(null)
@@ -373,15 +372,13 @@ function InventoryTab({ onOrdersChanged }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [stockList, productList, supplierList] = await Promise.all([
+      const [stockList, productList] = await Promise.all([
         apiFetch('/inventory/stock'),
         apiFetch('/inventory/products'),
-        apiFetch('/inventory/suppliers'),
       ])
       const productMap = Object.fromEntries(productList.map(p => [p.id, p]))
       setProducts(productMap)
       setStocks(stockList)
-      setSuppliers(supplierList)
     } catch (e) {
       setAlert({ message: e.message, type: 'error' })
     } finally {
@@ -429,6 +426,7 @@ function InventoryTab({ onOrdersChanged }) {
               <th className="px-4 py-3 text-right">Quantity</th>
               <th className="px-4 py-3 text-right">Reorder Point</th>
               <th className="px-4 py-3 text-right">Reorder Qty</th>
+              <th className="px-4 py-3 text-right">Lead Time</th>
               <th className="px-4 py-3 text-center">Status</th>
               <th className="px-4 py-3 text-center">Simulate Sale</th>
             </tr>
@@ -436,7 +434,7 @@ function InventoryTab({ onOrdersChanged }) {
           <tbody className="divide-y divide-gray-100">
             {stocks.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   No stock entries yet.
                 </td>
               </tr>
@@ -455,6 +453,9 @@ function InventoryTab({ onOrdersChanged }) {
                   </td>
                   <td className="px-4 py-3 text-right text-gray-500">{stock.reorder_point}</td>
                   <td className="px-4 py-3 text-right text-gray-500">{stock.reorder_qty}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">
+                    {product?.lead_time_days != null ? `${product.lead_time_days} ${product.lead_time_days === 1 ? 'day' : 'days'}` : '—'}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     {low
                       ? <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 border border-red-200">Low Stock</span>
@@ -479,13 +480,10 @@ function InventoryTab({ onOrdersChanged }) {
         </table>
       </div>
 
-      {/* Auto-buy settings */}
-      <AutoBuyPanel suppliers={suppliers} refreshOrders={onOrdersChanged} />
-
       {/* Activity Log */}
       <div className="rounded-lg border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Letzte Bewegungen</span>
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recent Activity</span>
           <button onClick={() => setLogKey(k => k + 1)} className="text-xs text-indigo-500 hover:underline">↻</button>
         </div>
         <ActivityLog refreshKey={logKey} />
@@ -545,21 +543,21 @@ function RateModal({ order, onClose, onRated }) {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">Supplier bewerten — Order #{order.id}</h3>
+          <h3 className="text-base font-semibold text-gray-900">Rate Supplier — Order #{order.id}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
         </div>
 
         <div className="flex flex-col items-center gap-3 py-2">
           <StarRating value={stars} onChange={setStars} />
           <div className="text-sm text-gray-400">
-            {['', 'Sehr schlecht', 'Schlecht', 'OK', 'Gut', 'Ausgezeichnet'][stars] || 'Sterne auswählen'}
+            {['', 'Very poor', 'Poor', 'OK', 'Good', 'Excellent'][stars] || 'Select a rating'}
           </div>
         </div>
 
         <textarea
           value={note}
           onChange={e => setNote(e.target.value)}
-          placeholder="Optionale Anmerkung (Pünktlichkeit, Qualität…)"
+          placeholder="Optional note (punctuality, quality…)"
           rows={3}
           className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
         />
@@ -567,9 +565,9 @@ function RateModal({ order, onClose, onRated }) {
         {error && <Alert message={error} type="error" onClose={() => setError(null)} />}
 
         <div className="flex justify-end gap-2 pt-1">
-          <Button onClick={onClose} variant="ghost" size="sm">Abbrechen</Button>
+          <Button onClick={onClose} variant="ghost" size="sm">Cancel</Button>
           <Button onClick={submit} loading={saving} disabled={!stars} variant="primary" size="sm">
-            Bewertung speichern
+            Save rating
           </Button>
         </div>
       </div>
@@ -729,7 +727,7 @@ function OrderActions({ order, acting, onAction, onFundClick, onRateClick }) {
   if (order.status === 'released') {
     return order.rating
       ? <StarRating value={order.rating} size="sm" />
-      : <Button onClick={() => onRateClick(order)} variant="ghost" size="sm">⭐ Bewerten</Button>
+      : <Button onClick={() => onRateClick(order)} variant="ghost" size="sm">⭐ Rate</Button>
   }
   return <span className="text-gray-400 text-xs">—</span>
 }
@@ -818,17 +816,11 @@ function AuditTrail({ order }) {
   )
 }
 
-function OrdersTab({ onBudgetChanged }) {
-  const [orders, setOrders]         = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [acting, setActing]         = useState({})
-  const [alert, setAlert]           = useState(null)
-  const [fundingOrder, setFundingOrder] = useState(null)
-  const [ratingOrder, setRatingOrder]   = useState(null)
-  const [expanded, setExpanded]         = useState({})
-
-  const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }))
+function useOrders({ onBudgetChanged } = {}) {
+  const [orders, setOrders]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing]   = useState({})
+  const [alert, setAlert]     = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -844,6 +836,113 @@ function OrdersTab({ onBudgetChanged }) {
 
   useEffect(() => { load() }, [load])
 
+  const orderAction = useCallback(async (orderId, action) => {
+    if (action === 'cancel' && !window.confirm(`Really cancel Order #${orderId}?`)) return
+    setActing(a => ({ ...a, [orderId]: action }))
+    setAlert(null)
+    try {
+      await apiFetch(`/orders/${orderId}/${action}`, { method: 'POST' })
+      setAlert({ message: `Order #${orderId}: ${action} successful`, type: 'success' })
+      if (action === 'release') onBudgetChanged?.()
+      await load()
+    } catch (e) {
+      setAlert({ message: e.message, type: 'error' })
+    } finally {
+      setActing(a => ({ ...a, [orderId]: null }))
+    }
+  }, [load, onBudgetChanged])
+
+  return { orders, loading, acting, alert, setAlert, load, orderAction }
+}
+
+function OrderSection({ title, hint, rows, acting, orderAction, onFundClick, onRateClick, expanded, toggleExpand }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{title}</h3>
+      {hint && <p className="text-xs text-gray-400 -mt-1">{hint}</p>}
+      <div className="overflow-hidden rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+            <tr>
+              <th className="px-4 py-3 text-left">Order</th>
+              <th className="px-4 py-3 text-right">Qty</th>
+              <th className="px-4 py-3 text-right">Unit Price</th>
+              <th className="px-4 py-3 text-right">Total (ALGO)</th>
+              <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(order => (
+              <Fragment key={order.id}>
+                <tr
+                  className="bg-white hover:bg-gray-50 transition-colors border-t border-gray-100 cursor-pointer"
+                  onClick={() => toggleExpand(order.id)}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-gray-400 text-xs transition-transform ${expanded[order.id] ? 'rotate-90' : ''}`}>▶</span>
+                      <span className="font-medium text-gray-900">Order #{order.id}</span>
+                    </div>
+                    {order.order_hash && (
+                      <div className="text-xs text-gray-400 font-mono ml-4" title={order.order_hash}>
+                        {order.order_hash.slice(0, 14)}…
+                      </div>
+                    )}
+                    {order.status === 'funded' && order.deliver_on_day != null && (
+                      <div className="text-xs text-amber-600 ml-4">🚚 Arrives: sim day {order.deliver_on_day}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700 font-mono">{order.quantity}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 font-mono">
+                    {order.unit_price != null ? order.unit_price.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700 font-mono font-semibold">
+                    {order.total_price != null ? order.total_price.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                    <StatusBadge status={order.status} />
+                  </td>
+                  <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                    <OrderActions
+                      order={order}
+                      acting={acting}
+                      onAction={orderAction}
+                      onFundClick={onFundClick}
+                      onRateClick={onRateClick}
+                    />
+                  </td>
+                </tr>
+                {expanded[order.id] && (
+                  <tr>
+                    <td colSpan={6} className="p-0">
+                      <AuditTrail order={order} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function OrdersTab({ onBudgetChanged }) {
+  const { orders, loading, acting, alert, setAlert, load, orderAction } = useOrders({ onBudgetChanged })
+  const [suppliers, setSuppliers]       = useState([])
+  const [generating, setGenerating]     = useState(false)
+  const [fundingOrder, setFundingOrder] = useState(null)
+  const [ratingOrder, setRatingOrder]   = useState(null)
+  const [expanded, setExpanded]         = useState({})
+  const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }))
+
+  useEffect(() => {
+    apiFetch('/inventory/suppliers').then(setSuppliers).catch(() => {})
+  }, [])
+
   async function generate() {
     setGenerating(true)
     setAlert(null)
@@ -858,27 +957,8 @@ function OrdersTab({ onBudgetChanged }) {
     }
   }
 
-  async function orderAction(orderId, action) {
-    if (action === 'cancel' && !window.confirm(`Order #${orderId} wirklich stornieren?`)) return
-    setActing(a => ({ ...a, [orderId]: action }))
-    setAlert(null)
-    try {
-      await apiFetch(`/orders/${orderId}/${action}`, { method: 'POST' })
-      setAlert({ message: `Order #${orderId}: ${action} successful`, type: 'success' })
-      if (action === 'release') onBudgetChanged?.()
-      await load()
-    } catch (e) {
-      setAlert({ message: e.message, type: 'error' })
-    } finally {
-      setActing(a => ({ ...a, [orderId]: null }))
-    }
-  }
-
-  const sections = [
-    { title: 'Pending',   rows: orders.filter(o => o.status === 'pending'),                      showActions: true },
-    { title: 'Active',    rows: orders.filter(o => ['funded','delivered'].includes(o.status)),   showActions: true },
-    { title: 'Completed', rows: orders.filter(o => ['released','cancelled'].includes(o.status)), showActions: false },
-  ]
+  const pending   = orders.filter(o => o.status === 'pending')
+  const completed = orders.filter(o => ['released', 'cancelled'].includes(o.status))
 
   if (loading) return <div className="py-16 text-center text-gray-400">Loading orders…</div>
 
@@ -903,7 +983,7 @@ function OrdersTab({ onBudgetChanged }) {
           onClose={() => setRatingOrder(null)}
           onRated={async () => {
             setRatingOrder(null)
-            setAlert({ message: 'Bewertung gespeichert', type: 'success' })
+            setAlert({ message: 'Rating saved', type: 'success' })
             await load()
           }}
         />
@@ -926,74 +1006,65 @@ function OrdersTab({ onBudgetChanged }) {
         </div>
       )}
 
-      {sections.map(({ title, rows, showActions }) => rows.length === 0 ? null : (
-        <div key={title} className="space-y-2">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{title}</h3>
-          <div className="overflow-hidden rounded-lg border border-gray-200">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
-                <tr>
-                  <th className="px-4 py-3 text-left">Order</th>
-                  <th className="px-4 py-3 text-right">Qty</th>
-                  <th className="px-4 py-3 text-right">Unit Price</th>
-                  <th className="px-4 py-3 text-right">Total (ALGO)</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(order => (
-                  <>
-                    <tr
-                      key={order.id}
-                      className="bg-white hover:bg-gray-50 transition-colors border-t border-gray-100 cursor-pointer"
-                      onClick={() => toggleExpand(order.id)}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-gray-400 text-xs transition-transform ${expanded[order.id] ? 'rotate-90' : ''}`}>▶</span>
-                          <span className="font-medium text-gray-900">Order #{order.id}</span>
-                        </div>
-                        {order.order_hash && (
-                          <div className="text-xs text-gray-400 font-mono ml-4" title={order.order_hash}>
-                            {order.order_hash.slice(0, 14)}…
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700 font-mono">{order.quantity}</td>
-                      <td className="px-4 py-3 text-right text-gray-500 font-mono">
-                        {order.unit_price != null ? order.unit_price.toFixed(4) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700 font-mono font-semibold">
-                        {order.total_price != null ? order.total_price.toFixed(4) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                        <StatusBadge status={order.status} />
-                      </td>
-                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                        <OrderActions
-                          order={order}
-                          acting={acting}
-                          onAction={orderAction}
-                          onFundClick={setFundingOrder}
-                          onRateClick={setRatingOrder}
-                        />
-                      </td>
-                    </tr>
-                    {expanded[order.id] && (
-                      <tr key={`${order.id}-audit`}>
-                        <td colSpan={6} className="p-0">
-                          <AuditTrail order={order} />
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <OrderSection
+        title="Pending" rows={pending} acting={acting} orderAction={orderAction}
+        onFundClick={setFundingOrder} onRateClick={setRatingOrder}
+        expanded={expanded} toggleExpand={toggleExpand}
+      />
+      <OrderSection
+        title="Completed" rows={completed} acting={acting} orderAction={orderAction}
+        onFundClick={setFundingOrder} onRateClick={setRatingOrder}
+        expanded={expanded} toggleExpand={toggleExpand}
+      />
+
+      {/* Auto-buy settings */}
+      <AutoBuyPanel suppliers={suppliers} refreshOrders={load} />
+    </div>
+  )
+}
+
+// --- DELIVERIES TAB ---
+
+function DeliveriesTab({ onBudgetChanged }) {
+  const { orders, loading, acting, alert, setAlert, load, orderAction } = useOrders({ onBudgetChanged })
+  const [expanded, setExpanded] = useState({})
+  const toggleExpand = (id) => setExpanded(e => ({ ...e, [id]: !e[id] }))
+  const noop = () => {}
+
+  const incoming  = orders.filter(o => o.status === 'funded')
+  const delivered = orders.filter(o => o.status === 'delivered')
+
+  if (loading) return <div className="py-16 text-center text-gray-400">Loading deliveries…</div>
+
+  return (
+    <div className="space-y-6">
+      {alert && <Alert message={alert.message} type={alert.type} onClose={() => setAlert(null)} />}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-900">Deliveries</h2>
+        <Button onClick={load} variant="ghost" size="sm">↻ Refresh</Button>
+      </div>
+
+      {incoming.length === 0 && delivered.length === 0 && (
+        <div className="py-16 text-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+          No open deliveries. Once an order is funded in the Orders tab,
+          it appears here for delivery confirmation.
         </div>
-      ))}
+      )}
+
+      <OrderSection
+        title="Confirm Delivery"
+        hint="Funded orders — confirm receipt of the goods."
+        rows={incoming} acting={acting} orderAction={orderAction}
+        onFundClick={noop} onRateClick={noop}
+        expanded={expanded} toggleExpand={toggleExpand}
+      />
+      <OrderSection
+        title="Delivered — Release Payment"
+        hint="Goods confirmed — release the escrow payment to the supplier."
+        rows={delivered} acting={acting} orderAction={orderAction}
+        onFundClick={noop} onRateClick={noop}
+        expanded={expanded} toggleExpand={toggleExpand}
+      />
     </div>
   )
 }
@@ -1105,12 +1176,12 @@ function SuppliersTab() {
                     <StarRating value={Math.round(ratingInfo.avg_rating)} size="sm" />
                     <span className="text-xs text-gray-500">
                       {ratingInfo.avg_rating.toFixed(1)} / 5
-                      <span className="text-gray-400"> ({ratingInfo.rating_count} {ratingInfo.rating_count === 1 ? 'Bewertung' : 'Bewertungen'})</span>
+                      <span className="text-gray-400"> ({ratingInfo.rating_count} {ratingInfo.rating_count === 1 ? 'review' : 'reviews'})</span>
                     </span>
                   </div>
                 )}
                 {ratingInfo?.avg_rating == null && (
-                  <div className="text-xs text-gray-400 mt-1">Noch keine Bewertungen</div>
+                  <div className="text-xs text-gray-400 mt-1">No reviews yet</div>
                 )}
               </div>
               <div className="text-xs text-gray-400 font-mono" title={sup.wallet_address}>
@@ -1155,7 +1226,7 @@ function SuppliersTab() {
             {/* Recent reviews */}
             {ratingInfo?.reviews?.length > 0 && (
               <div className="border-t border-gray-100 px-4 py-3 space-y-2">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Letzte Bewertungen</div>
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Recent Reviews</div>
                 {ratingInfo.reviews.map(r => (
                   <div key={r.order_id} className="flex items-start gap-2">
                     <StarRating value={r.stars} size="sm" />
@@ -1428,17 +1499,19 @@ function AnalyticsTab() {
 // --- PREDICTIONS TAB ---
 
 const URGENCY = {
-  critical: { label: 'Kritisch',     dot: 'bg-red-500',    row: 'bg-red-50',    text: 'text-red-700'    },
-  warning:  { label: 'Bald',         dot: 'bg-amber-400',  row: 'bg-amber-50',  text: 'text-amber-700'  },
+  critical: { label: 'Critical',     dot: 'bg-red-500',    row: 'bg-red-50',    text: 'text-red-700'    },
+  warning:  { label: 'Soon',         dot: 'bg-amber-400',  row: 'bg-amber-50',  text: 'text-amber-700'  },
   ok:       { label: 'OK',           dot: 'bg-emerald-500',row: 'bg-white',     text: 'text-emerald-700'},
-  no_data:  { label: 'Keine Daten',  dot: 'bg-gray-300',   row: 'bg-white',     text: 'text-gray-400'   },
+  no_data:  { label: 'No data',      dot: 'bg-gray-300',   row: 'bg-white',     text: 'text-gray-400'   },
 }
 
-function SimulationPanel({ onTick }) {
-  const [clock, setClock]     = useState(null)
-  const [skipping, setSkipping] = useState(false)
+// --- GLOBAL TIME SIMULATION BAR (visible on every tab) ---
+
+function SimulationBar({ onTick }) {
+  const [clock, setClock]         = useState(null)
+  const [skipping, setSkipping]   = useState(false)
   const [resetting, setResetting] = useState(false)
-  const [lastLog, setLastLog] = useState(null)
+  const [note, setNote]           = useState(null)
 
   const loadClock = useCallback(async () => {
     try { setClock(await apiFetch('/simulation/state')) } catch {}
@@ -1448,85 +1521,59 @@ function SimulationPanel({ onTick }) {
 
   async function skipDay() {
     setSkipping(true)
-    setLastLog(null)
+    setNote(null)
     try {
-      const result = await apiFetch('/simulation/skip-day', { method: 'POST' })
-      setClock({ sim_day: result.sim_day, started: true, current_sim_date: result.sim_date })
-      setLastLog(result)
+      const r = await apiFetch('/simulation/skip-day', { method: 'POST' })
+      setClock({ sim_day: r.sim_day, started: true, current_sim_date: r.sim_date })
+      const parts = []
+      if (r.sales?.length) parts.push(`${r.sales.length} product(s) sold`)
+      if (r.deliveries > 0) parts.push(`${r.deliveries} delivery(ies) 🚚`)
+      if (r.orders_triggered > 0) parts.push(`${r.orders_triggered} reorder(s) ⚡`)
+      setNote(`${r.sim_date}: ${parts.join(' · ') || 'no activity'}`)
       onTick()
     } catch (e) {
-      setLastLog({ error: e.message })
+      setNote(e.message)
     } finally {
       setSkipping(false)
     }
   }
 
   async function reset() {
-    if (!window.confirm('Simulation zurücksetzen? Alle Sale-Events werden gelöscht.')) return
+    if (!window.confirm('Reset the simulation? All sale events will be deleted.')) return
     setResetting(true)
     try {
       await apiFetch('/simulation/reset', { method: 'POST' })
       setClock({ sim_day: 0, started: false, current_sim_date: null })
-      setLastLog(null)
+      setNote(null)
       onTick()
     } finally {
       setResetting(false)
     }
   }
 
+  const btn = 'inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+
   return (
-    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-indigo-800">⏱ Zeitsimulation</span>
-          {clock?.started && (
-            <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full font-mono">
-              Tag {clock.sim_day} · {clock.current_sim_date}
-            </span>
-          )}
-          {!clock?.started && (
-            <span className="text-xs text-indigo-400">Noch nicht gestartet</span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {clock?.started && (
-            <Button onClick={reset} loading={resetting} variant="ghost" size="sm">
-              ↺ Reset
-            </Button>
-          )}
-          <Button onClick={skipDay} loading={skipping} variant="primary" size="sm">
-            ⏩ 1 Tag überspringen
-          </Button>
-        </div>
+    <div className="bg-indigo-600 text-white px-6 py-2 flex items-center gap-3 text-sm">
+      <span className="font-semibold whitespace-nowrap">⏱ Time Simulation</span>
+      {clock?.started ? (
+        <span className="bg-indigo-500/70 px-2 py-0.5 rounded-full font-mono text-xs whitespace-nowrap">
+          Day {clock.sim_day} · {clock.current_sim_date}
+        </span>
+      ) : (
+        <span className="text-indigo-200 text-xs whitespace-nowrap">Not started yet</span>
+      )}
+      {note && <span className="text-indigo-100 text-xs truncate hidden sm:block">{note}</span>}
+      <div className="ml-auto flex gap-2">
+        {clock?.started && (
+          <button onClick={reset} disabled={resetting} className={`${btn} bg-indigo-500/60 hover:bg-indigo-500`}>
+            {resetting && <span className="animate-spin">⟳</span>} ↺ Reset
+          </button>
+        )}
+        <button onClick={skipDay} disabled={skipping} className={`${btn} bg-white text-indigo-700 hover:bg-indigo-50`}>
+          {skipping && <span className="animate-spin">⟳</span>} ⏩ Skip 1 day
+        </button>
       </div>
-
-      {!clock?.started && (
-        <p className="text-xs text-indigo-600">
-          Klick startet die Simulation 29 Tage in der Vergangenheit.
-          Nach 7+ Tagen haben die Vorhersagen genug Daten.
-        </p>
-      )}
-
-      {lastLog && !lastLog.error && (
-        <div className="bg-white rounded border border-indigo-100 px-3 py-2 space-y-1">
-          <div className="text-xs font-semibold text-gray-500">
-            {lastLog.sim_date} — {lastLog.sales?.length ?? 0} Produkt(e) verkauft
-            {lastLog.orders_triggered > 0 && (
-              <span className="ml-2 text-amber-600">· {lastLog.orders_triggered} Nachbestellung(en) ausgelöst ⚡</span>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-            {lastLog.sales?.map(s => (
-              <span key={s.product} className={`text-xs ${s.low ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                {s.product.split(' ')[0]} −{s.sold} → {s.stock_after} {s.low ? '⚠' : ''}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {lastLog?.error && (
-        <div className="text-xs text-red-600">{lastLog.error}</div>
-      )}
     </div>
   )
 }
@@ -1559,13 +1606,11 @@ function PredictionsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Verbrauchsvorhersage</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Consumption Forecast</h2>
         <Button onClick={load} variant="ghost" size="sm">↻ Refresh</Button>
       </div>
 
-      <SimulationPanel onTick={load} />
-
-      {loading && <div className="py-8 text-center text-gray-400 text-sm">Analysiere Verbrauchsdaten…</div>}
+      {loading && <div className="py-8 text-center text-gray-400 text-sm">Analyzing consumption data…</div>}
       {error && (
         <div className="py-4 text-center">
           <div className="text-red-600 text-sm">{error}</div>
@@ -1578,24 +1623,24 @@ function PredictionsTab() {
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-center">
           <div className="text-2xl font-bold text-red-600">{critical}</div>
-          <div className="text-xs text-red-500 mt-0.5">Kritisch (&lt;3 Tage)</div>
+          <div className="text-xs text-red-500 mt-0.5">Critical (&lt;3 days)</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-center">
           <div className="text-2xl font-bold text-amber-600">{warning}</div>
-          <div className="text-xs text-amber-500 mt-0.5">Bald (&lt;7 Tage)</div>
+          <div className="text-xs text-amber-500 mt-0.5">Soon (&lt;7 days)</div>
         </div>
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-center">
           <div className="text-2xl font-bold text-indigo-700">
             {monthly_budget_projection > 0 ? `${monthly_budget_projection.toFixed(2)}` : '—'}
           </div>
-          <div className="text-xs text-indigo-400 mt-0.5">Proj. Monatskosten (ALGO)</div>
+          <div className="text-xs text-indigo-400 mt-0.5">Proj. monthly cost (ALGO)</div>
         </div>
       </div>
 
       {!hasAny && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-          <strong>Noch keine Verkaufshistorie.</strong> Simuliere ein paar Verkäufe über den
-          Inventory-Tab und komm dann zurück — die Vorhersagen erscheinen automatisch.
+          <strong>No sales history yet.</strong> Simulate a few sales from the
+          Inventory tab and come back — the forecasts will appear automatically.
         </div>
       )}
 
@@ -1604,12 +1649,12 @@ function PredictionsTab() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
             <tr>
-              <th className="px-4 py-3 text-left">Produkt</th>
-              <th className="px-4 py-3 text-right">Lager</th>
-              <th className="px-4 py-3 text-right">Verbrauch/Tag</th>
-              <th className="px-4 py-3 text-right">Aufgebraucht in</th>
-              <th className="px-4 py-3 text-right">Nachbestellen bis</th>
-              <th className="px-4 py-3 text-left">Günstigster Lieferant</th>
+              <th className="px-4 py-3 text-left">Product</th>
+              <th className="px-4 py-3 text-right">Stock</th>
+              <th className="px-4 py-3 text-right">Usage/day</th>
+              <th className="px-4 py-3 text-right">Stockout in</th>
+              <th className="px-4 py-3 text-right">Reorder by</th>
+              <th className="px-4 py-3 text-left">Cheapest supplier</th>
               <th className="px-4 py-3 text-center">Status</th>
             </tr>
           </thead>
@@ -1636,14 +1681,14 @@ function PredictionsTab() {
                   </td>
                   <td className={`px-4 py-3 text-right font-semibold ${u.text}`}>
                     {p.days_until_stockout != null
-                      ? `${p.days_until_stockout} Tage`
+                      ? `${p.days_until_stockout} days`
                       : <span className="text-gray-300 font-normal">—</span>
                     }
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600">
                     {p.reorder_by_date
                       ? <span className={p.urgency === 'critical' ? 'text-red-600 font-semibold' : ''}>
-                          {new Date(p.reorder_by_date).toLocaleDateString('de-AT', { day:'numeric', month:'short' })}
+                          {new Date(p.reorder_by_date).toLocaleDateString('en-US', { day:'numeric', month:'short' })}
                         </span>
                       : <span className="text-gray-300">—</span>
                     }
@@ -1676,8 +1721,8 @@ function PredictionsTab() {
 
       {hasAny && (
         <div className="text-xs text-gray-400 text-center">
-          Velocity basiert auf den letzten 7 Tagen (falls vorhanden), sonst 30-Tage-Durchschnitt.
-          Verkauft letzte 7 Tage: {predictions.map(p => `${p.product_name.split(' ')[0]} ×${p.sold_last_7d}`).join(' · ')}
+          Velocity is based on the last 7 days (if available), otherwise the 30-day average.
+          Sold in the last 7 days: {predictions.map(p => `${p.product_name.split(' ')[0]} ×${p.sold_last_7d}`).join(' · ')}
         </div>
       )}
       </>)}
@@ -1689,22 +1734,30 @@ function PredictionsTab() {
 
 const TABS = [
   { id: 'inventory',   label: '📦 Inventory' },
-  { id: 'analytics',   label: '📊 Analytics' },
-  { id: 'predictions', label: '🔮 Predictions' },
   { id: 'orders',      label: '📋 Orders' },
+  { id: 'deliveries',  label: '🚚 Deliveries' },
   { id: 'suppliers',   label: '🏪 Suppliers' },
+  { id: 'predictions', label: '🔮 Predictions' },
   { id: 'blockchain',  label: '⛓ Blockchain' },
+  { id: 'analytics',   label: '📊 Analytics' },
 ]
 
 export default function App() {
   const [tab, setTab] = useState('inventory')
   const [budgetKey, setBudgetKey] = useState(0)
+  const [simTick, setSimTick]     = useState(0)
 
   function switchTab(next) {
     setTab(next)
   }
 
   function refreshBudget() {
+    setBudgetKey(k => k + 1)
+  }
+
+  // Sim tick: refresh budget and force the active tab to reload its data.
+  function handleTick() {
+    setSimTick(k => k + 1)
     setBudgetKey(k => k + 1)
   }
 
@@ -1739,13 +1792,16 @@ export default function App() {
         </div>
       </nav>
 
+      <SimulationBar onTick={handleTick} />
+
       <main className="max-w-5xl mx-auto px-6 py-6">
-        {tab === 'inventory'  && <InventoryTab onOrdersChanged={() => switchTab('orders')} />}
-        {tab === 'orders'     && <OrdersTab onBudgetChanged={refreshBudget} />}
-        {tab === 'suppliers'  && <SuppliersTab />}
-        {tab === 'analytics'   && <AnalyticsTab />}
-        {tab === 'predictions' && <PredictionsTab />}
-        {tab === 'blockchain'  && <BlockchainTab />}
+        {tab === 'inventory'   && <InventoryTab key={simTick} onOrdersChanged={() => switchTab('orders')} />}
+        {tab === 'orders'      && <OrdersTab key={simTick} onBudgetChanged={refreshBudget} />}
+        {tab === 'deliveries'  && <DeliveriesTab key={simTick} onBudgetChanged={refreshBudget} />}
+        {tab === 'suppliers'   && <SuppliersTab key={simTick} />}
+        {tab === 'predictions' && <PredictionsTab key={simTick} />}
+        {tab === 'blockchain'  && <BlockchainTab key={simTick} />}
+        {tab === 'analytics'   && <AnalyticsTab key={simTick} />}
       </main>
     </div>
   )

@@ -14,6 +14,7 @@ class Product(SQLModel, table=True):
     name: str
     unit: str
     preferred_supplier_id: Optional[int] = Field(default=None, foreign_key="supplier.id")
+    lead_time_days: int = Field(default=2)  # delivery lead time in (simulation) days
 
 class Stock(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -93,3 +94,4 @@ class Order(SQLModel, table=True):
     txn_id:         Optional[str]   = None
     rating:         Optional[int]   = None  # 1–5, set after release
     rating_note:    Optional[str]   = None
+    deliver_on_day: Optional[int]   = None  # sim day the goods arrive (set at fund time)

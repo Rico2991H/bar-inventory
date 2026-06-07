@@ -87,6 +87,32 @@ def _client(app_id: int) -> EscrowClient:
     )
 
 
+def _ensure_buyer_funded(min_spending_microalgos: int = 10_000_000) -> None:
+    """On LocalNet, top up the buyer from the dispenser when its spendable
+    balance runs low.
+
+    Every escrow app the buyer creates raises the buyer's own minimum-balance
+    requirement (~0.1–0.2 ALGO per app), so a long-running simulation would
+    eventually push the required minimum above the actual balance and all
+    further escrow funding would fail. This keeps a spendable headroom.
+    Only runs on LocalNet — testnet/mainnet must be funded manually.
+    """
+    if network_name() != "localnet":
+        return
+    try:
+        algorand  = get_algorand()
+        buyer     = get_buyer()
+        dispenser = algorand.account.localnet_dispenser()
+        algorand.account.ensure_funded(
+            account_to_fund=buyer.address,
+            dispenser_account=dispenser.address,
+            min_spending_balance=AlgoAmount(micro_algo=min_spending_microalgos),
+        )
+    except Exception:
+        # Best-effort: if this fails, the real funding txn below surfaces the error.
+        pass
+
+
 def create_and_fund_escrow(seller_address: str, amount_microalgos: int, order_hash: str) -> dict:
     """Phase 8 — deploy a fresh escrow for an order and fund it.
 
@@ -100,6 +126,10 @@ def create_and_fund_escrow(seller_address: str, amount_microalgos: int, order_ha
     """
     algorand = get_algorand()
     buyer = get_buyer()
+
+    # Keep the buyer solvent on LocalNet across long simulations.
+    _ensure_buyer_funded()
+
     factory = _factory()
 
     note = bytes.fromhex(order_hash) if order_hash else None

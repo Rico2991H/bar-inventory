@@ -10,7 +10,8 @@ import json
 
 from backend.db.database import get_session
 from backend.models.product import (
-    Budget, Order, OrderStatus, Stock, StockLog, Supplier, SupplierProduct,
+    Budget, Order, OrderStatus, Product, SimulationClock, Stock, StockLog,
+    Supplier, SupplierProduct,
 )
 from backend.engine.rules import run_rule_engine
 from backend.blockchain import service
@@ -134,8 +135,11 @@ def fund_order(order_id: int, body: FundRequest, session: Session = Depends(get_
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Order total must be positive")
 
-    # Compute order_hash now that all fields are known
+    # Compute order_hash now that all fields are known. Include order.id so each
+    # order yields a UNIQUE on-chain create transaction — otherwise re-ordering the
+    # same product/supplier/qty/price produces a duplicate txid ("already in ledger").
     order_data = {
+        "order_id":    order.id,
         "product_id":  order.product_id,
         "supplier_id": body.supplier_id,
         "quantity":    order.quantity,
@@ -150,6 +154,12 @@ def fund_order(order_id: int, body: FundRequest, session: Session = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Escrow funding failed: {e}")
 
+    # Schedule delivery: goods arrive after the product's lead time (sim days).
+    product = session.get(Product, order.product_id)
+    clock   = session.get(SimulationClock, 1)
+    sim_day = clock.sim_day if clock else 0
+    lead    = product.lead_time_days if product and product.lead_time_days else 2
+
     order.supplier_id    = body.supplier_id
     order.unit_price     = unit_price
     order.total_price    = total_price
@@ -159,6 +169,7 @@ def fund_order(order_id: int, body: FundRequest, session: Session = Depends(get_
     order.app_id         = chain["app_id"]
     order.create_txn_id  = chain["create_tx"]
     order.txn_id         = chain["fund_tx"]
+    order.deliver_on_day = sim_day + lead
     session.add(order)
     session.commit()
     session.refresh(order)
@@ -276,49 +287,8 @@ def _get_order(order_id: int, session: Session) -> Order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
 
-def _get_order(order_id: int, session: Session) -> Order:
-    order = session.get(Order, order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return order
-
 def _get_funded_order(order_id: int, session: Session) -> Order:
     order = _get_order(order_id, session)
     if order.app_id is None:
         raise HTTPException(status_code=400, detail="Order has no escrow yet — fund it first")
     return order
-
-@router.post("/{order_id}/confirm-delivery")
-def confirm_delivery(order_id: int, session: Session = Depends(get_session)):
-    order = session.exec(select(Order).where(Order.id == order_id)).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    if order.status not in [OrderStatus.PENDING, OrderStatus.FUNDED]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot confirm delivery for order with status: {order.status}"
-        )
-
-    stock = session.exec(
-        select(Stock).where(Stock.product_id == order.product_id)
-    ).first()
-
-    if not stock:
-        raise HTTPException(status_code=404, detail="Stock not found for this product")
-
-    stock.quantity += order.quantity
-    session.add(stock)
-
-    order.status = OrderStatus.DELIVERED
-    session.add(order)
-
-    session.commit()
-    session.refresh(order)
-    session.refresh(stock)
-
-    return {
-        "message": "Delivery confirmed, stock restored",
-        "order": order,
-        "updated_stock": stock.model_dump()
-    }

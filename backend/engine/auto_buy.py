@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from backend.blockchain import service
 from backend.models.product import (
     AutoBuyConfig, Budget, Order, OrderStatus,
-    SupplierProduct, Supplier, Product,
+    SupplierProduct, Supplier, Product, SimulationClock,
 )
 
 
@@ -158,7 +158,12 @@ def try_auto_fund_order(order_id: int, session: Session) -> dict:
         select(AutoBuyConfig).where(AutoBuyConfig.product_id == order.product_id)
     ).first()
 
-    if not config or not config.enabled:
+    if config is None:
+        # Default when no row exists yet: auto-buy ON in AI mode for every product.
+        # (Created lazily — only persisted if the AI branch records a choice below.)
+        config = AutoBuyConfig(product_id=order.product_id, enabled=True, mode="ai")
+
+    if not config.enabled:
         return {"funded": False, "supplier": None, "reason": "auto-buy disabled"}
 
     entries  = session.exec(
@@ -241,8 +246,11 @@ def try_auto_fund_order(order_id: int, session: Session) -> dict:
                 "reason":   f"budget zu niedrig ({total_price:.4f} > {remaining:.4f} ALGO)",
             }
 
-    # Hash
+    # Hash — include order.id so each order produces a UNIQUE on-chain create
+    # transaction. Without it, re-ordering the same product/supplier/qty/price
+    # yields an identical txn → identical txid → "transaction already in ledger".
     order_hash = hashlib.sha256(json.dumps({
+        "order_id":    order.id,
         "product_id":  order.product_id,
         "supplier_id": supplier_id,
         "quantity":    order.quantity,
@@ -255,6 +263,11 @@ def try_auto_fund_order(order_id: int, session: Session) -> dict:
     except Exception as exc:
         return {"funded": False, "supplier": supplier.name, "reason": f"Blockchain-Fehler: {exc}"}
 
+    # Schedule delivery: goods arrive after the product's lead time (sim days).
+    clock   = session.get(SimulationClock, 1)
+    sim_day = clock.sim_day if clock else 0
+    lead    = product.lead_time_days if product and product.lead_time_days else 2
+
     # Persist funded order
     order.supplier_id    = supplier_id
     order.unit_price     = unit_price
@@ -265,6 +278,7 @@ def try_auto_fund_order(order_id: int, session: Session) -> dict:
     order.app_id         = chain["app_id"]
     order.create_txn_id  = chain["create_tx"]
     order.txn_id         = chain["fund_tx"]
+    order.deliver_on_day = sim_day + lead
     session.add(order)
     session.commit()
 
